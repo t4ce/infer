@@ -88,8 +88,11 @@ use std::io::{self, Read};
 #[cfg(feature = "std")]
 use std::path::Path;
 
-pub use map::MatcherType;
-use map::{WrapMatcher, MATCHER_MAP};
+pub use map::{
+    content_type_from_extension, content_type_info, is_registered_content_type, ContentTypeId,
+    ContentTypeInfo, MatcherType, CONTENT_TYPES,
+};
+use map::{content_type_id_for_type, WrapMatcher, MATCHER_MAP};
 
 /// All the supported matchers categorized and exposed as functions
 pub use matchers::*;
@@ -159,6 +162,15 @@ impl Type {
         self.extension
     }
 
+    /// Returns the stable native content identity for this built-in matcher.
+    ///
+    /// Types supplied through [`Infer::add`] deliberately return
+    /// [`ContentTypeId::NONE`]: user matchers do not allocate durable IDs.
+    #[must_use]
+    pub fn content_type_id(&self) -> ContentTypeId {
+        content_type_id_for_type(self.matcher_type, self.mime_type, self.extension)
+    }
+
     /// Checks if buf matches this Type
     fn matches(&self, buf: &[u8]) -> bool {
         (self.matcher.0)(buf)
@@ -171,6 +183,7 @@ impl fmt::Debug for Type {
             .field("matcher_type", &self.matcher_type)
             .field("mime_type", &self.mime_type)
             .field("extension", &self.extension)
+            .field("content_type_id", &self.content_type_id())
             // `matcher` is not exposed
             .finish_non_exhaustive()
     }
@@ -430,12 +443,8 @@ impl Infer {
     /// ```
     #[cfg(feature = "alloc")]
     pub fn add(&mut self, mime_type: &'static str, extension: &'static str, m: Matcher) {
-        self.mmap.push(Type::new_static(
-            MatcherType::Custom,
-            mime_type,
-            extension,
-            WrapMatcher(m),
-        ));
+        self.mmap
+            .push(Type::new_static(MatcherType::Custom, mime_type, extension, WrapMatcher(m)));
     }
 
     fn is_type(&self, buf: &[u8], matcher_type: MatcherType) -> bool {
@@ -467,6 +476,45 @@ static INFER: Infer = Infer::new();
 #[must_use]
 pub fn get(buf: &[u8]) -> Option<Type> {
     INFER.get(buf)
+}
+
+/// Return the one stable content identity evidenced by `buf`.
+///
+/// This is a signature detector, not a complete parser or security validator.
+/// `BLOB` is never inferred. Strict UTF-8 is recognised only as the final
+/// fallback after every more-specific matcher, and an empty byte sequence has
+/// no inferred identity.
+#[must_use]
+pub fn detect_content_type(buf: &[u8]) -> Option<ContentTypeId> {
+    // `get` retains its historic std-assisted DOC/XLS/PPT classification for
+    // compatibility. Native content identity must not vary with features, and
+    // the CFB magic alone proves only the generic container.
+    if archive::is_ole_compound(buf) {
+        return Some(ContentTypeId::OLE_COMPOUND_FILE);
+    }
+    if let Some(kind) = get(buf) {
+        let id = kind.content_type_id();
+        if id != ContentTypeId::NONE {
+            return Some(id);
+        }
+    }
+    (!buf.is_empty() && core::str::from_utf8(buf).is_ok()).then_some(ContentTypeId::UTF8_TEXT)
+}
+
+/// Return whether `buf` detects as exactly `expected`.
+///
+/// This intentionally compares the selected detection result rather than
+/// calling an individual broad matcher: an EPUB is not accepted as ZIP, and a
+/// CR2 is not accepted as generic TIFF.
+#[must_use]
+pub fn matches_content_type(buf: &[u8], expected: ContentTypeId) -> bool {
+    detect_content_type(buf) == Some(expected)
+}
+
+/// Return all registered native content types in frozen-ID order.
+#[must_use]
+pub const fn content_types() -> &'static [ContentTypeInfo] {
+    CONTENT_TYPES
 }
 
 /// Returns the file type of the file given a path.
@@ -670,6 +718,127 @@ mod tests {
         assert_eq!(kind.matcher_type(), crate::MatcherType::Image);
     }
 
+    #[test]
+    fn content_registry_is_frozen_and_unique() {
+        assert_eq!(crate::ContentTypeId::NONE.raw(), 0);
+        assert_eq!(crate::ContentTypeId::BLOB.raw(), 1);
+        assert_eq!(crate::ContentTypeId::UTF8_TEXT.raw(), 2);
+        assert_eq!(crate::ContentTypeId::HTML.raw(), 0x0001_0020);
+        assert_eq!(crate::ContentTypeId::PNG.raw(), 0x0001_0040);
+        assert_eq!(crate::ContentTypeId::WAV.raw(), 0x0001_0053);
+        assert_eq!(crate::ContentTypeId::TRUEOS_BLUEPRINT.raw(), 0x0001_0050);
+        for (index, info) in crate::content_types().iter().enumerate() {
+            assert_eq!(crate::content_type_info(info.id), Some(info));
+            assert!(crate::is_registered_content_type(info.id));
+            assert!(info.id.is_registered());
+            assert!(crate::content_types()[..index]
+                .iter()
+                .all(|earlier| earlier.id != info.id));
+        }
+        assert!(!crate::is_registered_content_type(crate::ContentTypeId::NONE));
+        assert!(!crate::is_registered_content_type(crate::ContentTypeId::from_raw(0xD00D_F00D)));
+        let mut previous: Option<&crate::ContentTypeInfo> = None;
+        for info in crate::content_types()
+            .iter()
+            .filter(|info| info.id.raw() >= 0x0001_0000)
+        {
+            if let Some(previous) = previous {
+                assert!(
+                    previous.canonical_name < info.canonical_name,
+                    "{} must precede {}",
+                    previous.canonical_name,
+                    info.canonical_name
+                );
+                assert_eq!(previous.id.raw() + 1, info.id.raw());
+            }
+            previous = Some(info);
+        }
+    }
+
+    #[test]
+    fn extension_lookup_is_explicit_and_case_insensitive() {
+        assert_eq!(crate::content_type_from_extension(".PNG"), Some(crate::ContentTypeId::PNG));
+        assert_eq!(crate::content_type_from_extension("jpeg"), Some(crate::ContentTypeId::JPEG));
+        assert_eq!(crate::content_type_from_extension(".bin"), Some(crate::ContentTypeId::BLOB));
+        assert_eq!(crate::content_type_from_extension("unknown"), None);
+        assert_eq!(crate::content_type_from_extension("dir/png"), None);
+    }
+
+    #[test]
+    fn type_exposes_stable_identity() {
+        let kind = crate::get(b"\x89PNG\r\n\x1A\n").unwrap();
+        assert_eq!(kind.content_type_id(), crate::ContentTypeId::PNG);
+    }
+
+    #[test]
+    fn strict_detection_never_infers_blob_and_uses_utf8_last() {
+        assert_eq!(crate::detect_content_type(b""), None);
+        assert_eq!(crate::detect_content_type(&[0xFF]), None);
+        assert_eq!(
+            crate::detect_content_type(b"plain text"),
+            Some(crate::ContentTypeId::UTF8_TEXT)
+        );
+        assert_eq!(
+            crate::detect_content_type(b"<html>ok</html>"),
+            Some(crate::ContentTypeId::HTML)
+        );
+        assert!(!crate::matches_content_type(b"plain text", crate::ContentTypeId::BLOB));
+        assert!(!crate::matches_content_type(b"<html>ok</html>", crate::ContentTypeId::UTF8_TEXT));
+    }
+
+    #[test]
+    fn strict_pe_and_generic_ole_are_feature_invariant() {
+        let mut pe = [0u8; 0x80];
+        pe[..2].copy_from_slice(b"MZ");
+        pe[0x3c..0x40].copy_from_slice(&(0x40u32).to_le_bytes());
+        pe[0x40..0x44].copy_from_slice(b"PE\0\0");
+        assert_eq!(
+            crate::detect_content_type(&pe),
+            Some(crate::ContentTypeId::PORTABLE_EXECUTABLE)
+        );
+        pe[0x56..0x58].copy_from_slice(&(0x2000u16).to_le_bytes());
+        assert_eq!(
+            crate::detect_content_type(&pe),
+            Some(crate::ContentTypeId::PORTABLE_EXECUTABLE)
+        );
+        assert_ne!(
+            crate::detect_content_type(b"MZ"),
+            Some(crate::ContentTypeId::PORTABLE_EXECUTABLE)
+        );
+        assert_eq!(
+            crate::detect_content_type(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]),
+            Some(crate::ContentTypeId::OLE_COMPOUND_FILE)
+        );
+    }
+
+    #[test]
+    fn equality_uses_selected_identity_not_a_broad_predicate() {
+        let mut epub = [0u8; 58];
+        epub[..4].copy_from_slice(b"PK\x03\x04");
+        epub[30..58].copy_from_slice(b"mimetypeapplication/epub+zip");
+        assert_eq!(crate::detect_content_type(&epub), Some(crate::ContentTypeId::EPUB));
+        assert!(crate::matches_content_type(&epub, crate::ContentTypeId::EPUB));
+        assert!(!crate::matches_content_type(&epub, crate::ContentTypeId::ZIP));
+    }
+
+    #[test]
+    fn trueos_blueprint_requires_a_complete_v1_container() {
+        let mut blueprint = [0u8; 27];
+        blueprint[..4].copy_from_slice(b"TRBP");
+        blueprint[4..6].copy_from_slice(&(1u16).to_le_bytes());
+        blueprint[16..20].copy_from_slice(&(3u32).to_le_bytes());
+        blueprint[20..24].copy_from_slice(&(3u32).to_le_bytes());
+        assert_eq!(
+            crate::detect_content_type(&blueprint),
+            Some(crate::ContentTypeId::TRUEOS_BLUEPRINT)
+        );
+        blueprint[16..20].copy_from_slice(&(4u32).to_le_bytes());
+        assert_ne!(
+            crate::detect_content_type(&blueprint),
+            Some(crate::ContentTypeId::TRUEOS_BLUEPRINT)
+        );
+    }
+
     #[cfg(feature = "alloc")]
     #[test]
     fn test_custom_matcher_ordering() {
@@ -691,6 +860,7 @@ mod tests {
         let typ = info.get(buf_foo).expect("type is matched");
         assert_eq!(typ.mime_type(), "custom/foo");
         assert_eq!(typ.extension(), "foo");
+        assert_eq!(typ.content_type_id(), crate::ContentTypeId::NONE);
 
         let buf_bar = &[0x89, 0x50, 0x4E, 0x47];
         let typ = info.get(buf_bar).expect("type is matched");

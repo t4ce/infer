@@ -361,6 +361,16 @@ pub fn is_lz4(buf: &[u8]) -> bool {
 /// Returns whether a buffer is a MSI Windows Installer archive.
 #[must_use]
 pub fn is_msi(buf: &[u8]) -> bool {
+    is_ole_compound(buf)
+}
+
+/// Returns whether a buffer is an OLE Compound File Binary container.
+///
+/// This is intentionally a container-level assertion. The eight-byte magic
+/// cannot honestly distinguish MSI, Word, Excel, or PowerPoint without a
+/// complete Compound File parser.
+#[must_use]
+pub fn is_ole_compound(buf: &[u8]) -> bool {
     buf.len() > 7
         && buf[0] == 0xD0
         && buf[1] == 0xCF

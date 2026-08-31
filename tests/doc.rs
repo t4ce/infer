@@ -46,13 +46,7 @@ test_format!(
 );
 
 #[cfg(feature = "std")]
-test_format_get_only!(
-    Doc,
-    "application/vnd.ms-powerpoint",
-    "ppt",
-    ppt,
-    "sample.ppt"
-);
+test_format_get_only!(Doc, "application/vnd.ms-powerpoint", "ppt", ppt, "sample.ppt");
 
 test_format!(
     Doc,

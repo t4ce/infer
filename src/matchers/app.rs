@@ -21,7 +21,32 @@ pub fn is_wasm(buf: &[u8]) -> bool {
         && buf[7] == 0x00
 }
 
-/// Returns whether a buffer is an EXE. DLL and EXE have the same magic number, so returns true also for a DLL.
+/// Returns whether a buffer is a complete TRUEOS Blueprint v1 container.
+///
+/// `TRBP` alone is intentionally insufficient. The fixed 24-byte v1 header
+/// stores a little-endian `u16` version at bytes 4..6 and a little-endian
+/// `u32` payload length at bytes 16..20; that payload must fit in the supplied
+/// complete buffer.
+#[must_use]
+pub fn is_trueos_blueprint(buf: &[u8]) -> bool {
+    const HEADER_BYTES: usize = 24;
+    if buf.len() < HEADER_BYTES
+        || &buf[..4] != b"TRBP"
+        || u16::from_le_bytes(buf[4..6].try_into().unwrap()) != 1
+    {
+        return false;
+    }
+    let payload_len = u32::from_le_bytes(buf[16..20].try_into().unwrap()) as usize;
+    HEADER_BYTES
+        .checked_add(payload_len)
+        .is_some_and(|complete_len| complete_len <= buf.len())
+}
+
+/// Returns whether a buffer is a Portable Executable program image.
+///
+/// A bare `MZ` header is not enough: DOS programs and arbitrary bytes can use
+/// it too.  The PE signature and COFF header must be present. DLLs are
+/// intentionally excluded; use [`is_dll`] for those.
 ///
 /// # Example
 ///
@@ -31,13 +56,25 @@ pub fn is_wasm(buf: &[u8]) -> bool {
 /// ```
 #[must_use]
 pub fn is_exe(buf: &[u8]) -> bool {
-    buf.len() > 1 && buf[0] == 0x4D && buf[1] == 0x5A
+    pe_characteristics(buf).is_some_and(|flags| flags & 0x2000 == 0)
 }
 
-/// Returns whether a buffer is a DLL. DLL and EXE have the same magic number, so returns true also for an EXE.
+/// Returns whether a buffer is a Portable Executable DLL image.
 #[must_use]
 pub fn is_dll(buf: &[u8]) -> bool {
-    is_exe(buf)
+    pe_characteristics(buf).is_some_and(|flags| flags & 0x2000 != 0)
+}
+
+fn pe_characteristics(buf: &[u8]) -> Option<u16> {
+    if buf.len() < 0x40 || &buf[..2] != b"MZ" {
+        return None;
+    }
+    let offset = u32::from_le_bytes(buf[0x3c..0x40].try_into().ok()?) as usize;
+    let header_end = offset.checked_add(24)?;
+    if header_end > buf.len() || &buf[offset..offset + 4] != b"PE\0\0" {
+        return None;
+    }
+    Some(u16::from_le_bytes(buf[offset + 22..offset + 24].try_into().ok()?))
 }
 
 /// Returns whether a buffer is an ELF.
