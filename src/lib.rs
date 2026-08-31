@@ -759,6 +759,9 @@ mod tests {
     fn extension_lookup_is_explicit_and_case_insensitive() {
         assert_eq!(crate::content_type_from_extension(".PNG"), Some(crate::ContentTypeId::PNG));
         assert_eq!(crate::content_type_from_extension("jpeg"), Some(crate::ContentTypeId::JPEG));
+        assert_eq!(crate::content_type_from_extension("dll"), Some(crate::ContentTypeId::PORTABLE_EXECUTABLE));
+        assert_eq!(crate::content_type_from_extension("doc"), Some(crate::ContentTypeId::OLE_COMPOUND_FILE));
+        assert_eq!(crate::content_type_from_extension("msi"), Some(crate::ContentTypeId::OLE_COMPOUND_FILE));
         assert_eq!(crate::content_type_from_extension(".bin"), Some(crate::ContentTypeId::BLOB));
         assert_eq!(crate::content_type_from_extension("unknown"), None);
         assert_eq!(crate::content_type_from_extension("dir/png"), None);
