@@ -817,6 +817,7 @@ mod tests {
             ("XZ", 0x0001_005B),
             ("ZIP", 0x0001_005C),
             ("ZSTD", 0x0001_005D),
+            ("WARCRAFT3_MAP", 0x0001_005E),
         ];
 
         assert_eq!(crate::ContentTypeId::NONE.raw(), 0);
@@ -847,12 +848,11 @@ mod tests {
             .filter(|info| info.id.raw() >= 0x0001_0000)
         {
             if let Some(previous) = previous {
-                assert!(
-                    previous.canonical_name < info.canonical_name,
-                    "{} must precede {}",
-                    previous.canonical_name,
-                    info.canonical_name
-                );
+                // The original registry was alphabetical. New identities are
+                // appended without renumbering those frozen on-disk IDs.
+                if info.id.raw() <= crate::ContentTypeId::ZSTD.raw() {
+                    assert!(previous.canonical_name < info.canonical_name);
+                }
                 assert_eq!(previous.id.raw() + 1, info.id.raw());
             }
             previous = Some(info);
