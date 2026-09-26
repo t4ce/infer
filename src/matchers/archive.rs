@@ -396,3 +396,9 @@ pub fn is_cpio(buf: &[u8]) -> bool {
         && buf[4] == 0x30
         && buf[5] == 0x31) // newc format
 }
+/// Retail Warcraft III map container: 512-byte HM3W preamble followed by MPQ.
+/// Both RoC (.w3m) and TFT (.w3x) share this container identity; detecting it
+/// does not prove compatibility with a particular game version.
+pub fn is_warcraft3_map(buf: &[u8]) -> bool {
+    buf.starts_with(b"HM3W") && buf.get(512..516) == Some(b"MPQ\x1a")
+}

@@ -44,3 +44,18 @@ fn lz4_skippable_frames_before_real_frame_match() {
 
     assert!(infer::archive::is_lz4(&input));
 }
+
+#[test]
+fn warcraft_map_identity_requires_both_container_signatures() {
+    let mut bytes = [0u8; 516];
+    bytes[..4].copy_from_slice(b"HM3W");
+    assert_ne!(infer::detect_content_type(&bytes), Some(infer::ContentTypeId::WARCRAFT3_MAP));
+    bytes[512..].copy_from_slice(b"MPQ\x1a");
+    assert_eq!(infer::detect_content_type(&bytes), Some(infer::ContentTypeId::WARCRAFT3_MAP));
+    assert_eq!(infer::get(&bytes).unwrap().extension(), "w3m");
+    assert_eq!(infer::content_type_from_extension(".W3M"), Some(infer::ContentTypeId::WARCRAFT3_MAP));
+    assert_eq!(infer::content_type_from_extension("w3x"), Some(infer::ContentTypeId::WARCRAFT3_MAP));
+    assert!(!infer::archive::is_warcraft3_map(&bytes[..515]));
+    bytes[0] = 0;
+    assert!(!infer::archive::is_warcraft3_map(&bytes));
+}
