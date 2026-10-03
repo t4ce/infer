@@ -266,7 +266,12 @@ macro_rules! matcher_map {
 // The above order should be preserved when adding new types since
 // it may affect match result and/or performances.
 matcher_map!(
-    (MatcherType::Archive, "application/x-warcraft3-map", "w3m", matchers::archive::is_warcraft3_map),
+    (
+        MatcherType::Archive,
+        "application/x-warcraft3-map",
+        "w3m",
+        matchers::archive::is_warcraft3_map
+    ),
     // Application
     (MatcherType::App, "application/wasm", "wasm", matchers::app::is_wasm),
     (MatcherType::App, "application/x-executable", "elf", matchers::app::is_elf),
