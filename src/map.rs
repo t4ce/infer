@@ -103,6 +103,8 @@ const fn aliases_for(id: ContentTypeId) -> &'static [&'static str] {
         HTML_ALIASES
     } else if id.raw() == ContentTypeId::OLE_COMPOUND_FILE.raw() {
         OLE_ALIASES
+    } else if id.raw() == ContentTypeId::LZ4.raw() {
+        &["mz4"]
     } else if id.raw() == ContentTypeId::WARCRAFT3_MAP.raw() {
         &["w3x"]
     } else {

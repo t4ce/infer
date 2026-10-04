@@ -863,6 +863,7 @@ mod tests {
     fn extension_lookup_is_explicit_and_case_insensitive() {
         assert_eq!(crate::content_type_from_extension(".PNG"), Some(crate::ContentTypeId::PNG));
         assert_eq!(crate::content_type_from_extension("jpeg"), Some(crate::ContentTypeId::JPEG));
+        assert_eq!(crate::content_type_from_extension(".MZ4"), Some(crate::ContentTypeId::LZ4));
         assert_eq!(
             crate::content_type_from_extension("dll"),
             Some(crate::ContentTypeId::PORTABLE_EXECUTABLE)
