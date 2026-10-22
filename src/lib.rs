@@ -817,7 +817,6 @@ mod tests {
             ("XZ", 0x0001_005B),
             ("ZIP", 0x0001_005C),
             ("ZSTD", 0x0001_005D),
-            ("WARCRAFT3_MAP", 0x0001_005E),
         ];
 
         assert_eq!(crate::ContentTypeId::NONE.raw(), 0);
@@ -841,6 +840,7 @@ mod tests {
                 .all(|earlier| earlier.id != info.id));
         }
         assert!(!crate::is_registered_content_type(crate::ContentTypeId::NONE));
+        assert!(!crate::is_registered_content_type(crate::ContentTypeId::from_raw(0x0001_005E)));
         assert!(!crate::is_registered_content_type(crate::ContentTypeId::from_raw(0xD00D_F00D)));
         let mut previous: Option<&crate::ContentTypeInfo> = None;
         for info in crate::content_types()

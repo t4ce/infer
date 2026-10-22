@@ -105,8 +105,6 @@ const fn aliases_for(id: ContentTypeId) -> &'static [&'static str] {
         OLE_ALIASES
     } else if id.raw() == ContentTypeId::LZ4.raw() {
         &["mz4"]
-    } else if id.raw() == ContentTypeId::WARCRAFT3_MAP.raw() {
-        &["w3x"]
     } else {
         &[]
     }
@@ -114,6 +112,7 @@ const fn aliases_for(id: ContentTypeId) -> &'static [&'static str] {
 
 // Frozen v1 durable registry, ordered alphabetically by canonical identity
 // name. New identities append after this block; no existing value moves.
+// The retired identity 0x0001_005E must not be reused.
 content_registry!(
     (AAC, 0x0001_0000, MatcherType::Audio, "audio/aac", "aac"),
     (AIFF, 0x0001_0001, MatcherType::Audio, "audio/x-aiff", "aiff"),
@@ -233,7 +232,6 @@ content_registry!(
     (XZ, 0x0001_005B, MatcherType::Archive, "application/x-xz", "xz"),
     (ZIP, 0x0001_005C, MatcherType::Archive, "application/zip", "zip"),
     (ZSTD, 0x0001_005D, MatcherType::Archive, "application/zstd", "zst"),
-    (WARCRAFT3_MAP, 0x0001_005E, MatcherType::Archive, "application/x-warcraft3-map", "w3m"),
 );
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -268,12 +266,6 @@ macro_rules! matcher_map {
 // The above order should be preserved when adding new types since
 // it may affect match result and/or performances.
 matcher_map!(
-    (
-        MatcherType::Archive,
-        "application/x-warcraft3-map",
-        "w3m",
-        matchers::archive::is_warcraft3_map
-    ),
     // Application
     (MatcherType::App, "application/wasm", "wasm", matchers::app::is_wasm),
     (MatcherType::App, "application/x-executable", "elf", matchers::app::is_elf),
