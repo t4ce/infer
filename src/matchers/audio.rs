@@ -19,15 +19,89 @@ pub fn is_mp3(buf: &[u8]) -> bool {
 /// Returns whether a buffer is M4A data.
 #[must_use]
 pub fn is_m4a(buf: &[u8]) -> bool {
-    buf.len() > 10
-        && ((buf[4] == 0x66
-            && buf[5] == 0x74
-            && buf[6] == 0x79
-            && buf[7] == 0x70
-            && buf[8] == 0x4D
-            && buf[9] == 0x34
-            && buf[10] == 0x41)
-            || (buf[0] == 0x4D && buf[1] == 0x34 && buf[2] == 0x41 && buf[3] == 0x20))
+    let branded = buf.len() > 11
+        && ((&buf[4..8] == b"ftyp" && &buf[8..12] == b"M4A ") || &buf[..4] == b"M4A ");
+    if branded {
+        return true;
+    }
+    // Generic ISO BMFF brands (e.g. ffmpeg's `isom`) do not distinguish
+    // audio from video. Inspect bounded box payloads, never magic strings
+    // inside compressed media data. No allocation or recursive descent.
+    if !super::video::is_mp4(buf) {
+        return false;
+    }
+    let mut audio = false;
+    let mut top = buf;
+    while !top.is_empty() {
+        let Some((kind, payload, rest)) = bmff_box(top) else {
+            return false;
+        };
+        top = rest;
+        if kind != b"moov" {
+            continue;
+        }
+        let mut movie = payload;
+        while !movie.is_empty() {
+            let Some((kind, payload, rest)) = bmff_box(movie) else {
+                return false;
+            };
+            movie = rest;
+            if kind != b"trak" {
+                continue;
+            }
+            let mut track = payload;
+            let mut handler = None;
+            while !track.is_empty() {
+                let Some((kind, payload, rest)) = bmff_box(track) else {
+                    return false;
+                };
+                track = rest;
+                if kind != b"mdia" {
+                    continue;
+                }
+                let mut media = payload;
+                while !media.is_empty() {
+                    let Some((kind, payload, rest)) = bmff_box(media) else {
+                        return false;
+                    };
+                    media = rest;
+                    if kind == b"hdlr" {
+                        let Some(value) = payload.get(8..12) else {
+                            return false;
+                        };
+                        if handler.replace(value).is_some() {
+                            return false;
+                        }
+                    }
+                }
+            }
+            match handler {
+                Some(b"soun") => audio = true,
+                // Permit metadata/text tracks, but never admit a video track.
+                Some(b"meta" | b"text" | b"sbtl" | b"subt") => {}
+                _ => return false,
+            }
+        }
+    }
+    audio
+}
+
+/// Read one ISO BMFF box, including extended sizes and boxes to EOF.
+fn bmff_box(buf: &[u8]) -> Option<(&[u8], &[u8], &[u8])> {
+    let size = u32::from_be_bytes(buf.get(..4)?.try_into().ok()?);
+    let kind = buf.get(4..8)?;
+    let (size, header) = match size {
+        0 => (buf.len(), 8),
+        1 => (
+            usize::try_from(u64::from_be_bytes(buf.get(8..16)?.try_into().ok()?)).ok()?,
+            16,
+        ),
+        size => (usize::try_from(size).ok()?, 8),
+    };
+    if size < header {
+        return None;
+    }
+    Some((kind, buf.get(header..size)?, buf.get(size..)?))
 }
 
 /// Returns whether a buffer is OGG data.

@@ -318,6 +318,8 @@ matcher_map!(
     (MatcherType::Image, "image/vnd.djvu", "djvu", matchers::image::is_djvu),
     (MatcherType::Image, "image/vnd.dwg", "dwg", matchers::image::is_dwg),
     // Video
+    // Audio-only ISO BMFF must precede the generic MP4 container matcher.
+    (MatcherType::Audio, "audio/m4a", "m4a", matchers::audio::is_m4a),
     (MatcherType::Video, "video/mp4", "mp4", matchers::video::is_mp4),
     (MatcherType::Video, "video/x-m4v", "m4v", matchers::video::is_m4v),
     (MatcherType::Video, "video/x-matroska", "mkv", matchers::video::is_mkv),
@@ -330,7 +332,6 @@ matcher_map!(
     // Audio
     (MatcherType::Audio, "audio/midi", "midi", matchers::audio::is_midi),
     (MatcherType::Audio, "audio/mpeg", "mp3", matchers::audio::is_mp3),
-    (MatcherType::Audio, "audio/m4a", "m4a", matchers::audio::is_m4a),
     // has to come before ogg
     (MatcherType::Audio, "audio/opus", "opus", matchers::audio::is_ogg_opus),
     (MatcherType::Audio, "audio/ogg", "ogg", matchers::audio::is_ogg),
